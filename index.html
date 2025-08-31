@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML Previewer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            min-height: 100vh;
+        }
+    </style>
+</head>
+<body class="p-4 flex flex-col items-center justify-center">
+
+    <!-- Main application container -->
+    <div id="app-container" class="w-full max-w-4xl bg-white rounded-lg shadow-xl p-8 space-y-6">
+
+        <!-- Header -->
+        <header class="text-center">
+            <h1 class="text-3xl font-bold text-gray-800">HTML Previewer</h1>
+            <p class="text-sm text-gray-500 mt-2">Create and share HTML snippets instantly.</p>
+        </header>
+
+        <!-- Dynamic Content Area -->
+        <main id="dynamic-content">
+            <!-- This area will be populated by JavaScript -->
+        </main>
+        
+        <!-- User Info Container -->
+        <div id="user-info-container" class="mt-4 text-center text-sm text-gray-600">
+            <!-- User ID will be displayed here -->
+        </div>
+
+        <!-- Status/Error Message Box -->
+        <div id="status-message" class="hidden p-4 rounded-lg text-center" role="alert"></div>
+
+    </div>
+
+    <!-- The actual preview iframe, which will be shown on the preview page -->
+    <iframe id="html-preview-frame" class="hidden w-full h-screen border-none" sandbox="allow-scripts allow-forms allow-same-origin"></iframe>
+
+    <script type="module">
+        // Global variables provided by the environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Firebase SDK imports
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global Firebase instances
+        let app, db, auth;
+        let userId = null;
+
+        // DOM elements
+        const appContainer = document.getElementById('app-container');
+        const dynamicContent = document.getElementById('dynamic-content');
+        const htmlPreviewFrame = document.getElementById('html-preview-frame');
+        const statusMessage = document.getElementById('status-message');
+        const userInfoContainer = document.getElementById('user-info-container');
+
+        // Function to show a status message to the user
+        function showStatusMessage(message, isError = false) {
+            statusMessage.textContent = message;
+            statusMessage.className = `p-4 rounded-lg text-center ${isError ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'} block`;
+        }
+
+        // Initialize Firebase and handle authentication
+        function initializeFirebase() {
+            try {
+                if (Object.keys(firebaseConfig).length > 0) {
+                    app = initializeApp(firebaseConfig);
+                    auth = getAuth(app);
+                    db = getFirestore(app);
+
+                    // Listen for authentication state changes
+                    onAuthStateChanged(auth, async (user) => {
+                        if (user) {
+                            userId = user.uid;
+                            userInfoContainer.textContent = `User ID: ${userId}`;
+                            
+                            // Check the URL to determine which page to render
+                            const urlParams = new URLSearchParams(window.location.search);
+                            const htmlId = urlParams.get('id');
+
+                            if (htmlId) {
+                                renderPreviewPage(htmlId);
+                            } else {
+                                renderEditorPage();
+                            }
+                        } else {
+                            // User is signed out or not authenticated, sign in anonymously
+                            if (initialAuthToken) {
+                                await signInWithCustomToken(auth, initialAuthToken);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        }
+                    });
+                } else {
+                    showStatusMessage("Firebase configuration is missing.", true);
+                }
+            } catch (error) {
+                console.error("Firebase initialization failed:", error);
+                showStatusMessage("Failed to initialize the application.", true);
+            }
+        }
+
+        // Renders the HTML editor page
+        function renderEditorPage() {
+            dynamicContent.innerHTML = `
+                <div class="space-y-4">
+                    <label for="html-input" class="block text-sm font-medium text-gray-700">Paste your HTML code here or upload a file.</label>
+                    <textarea id="html-input" rows="20" class="w-full p-4 rounded-md border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 resize-none" placeholder="Enter your HTML here..."></textarea>
+                    
+                    <label for="file-upload" class="flex flex-col items-center justify-center w-full px-4 py-2 text-blue-700 bg-blue-100 rounded-md border border-blue-200 cursor-pointer hover:bg-blue-200 transition-colors duration-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                        <span class="mt-2 text-sm font-semibold">Upload an HTML file</span>
+                        <input id="file-upload" type="file" class="hidden" accept=".html,.htm">
+                    </label>
+
+                    <button id="view-html-btn" class="w-full px-6 py-3 bg-blue-600 text-white font-semibold rounded-md shadow-lg hover:bg-blue-700 transition-colors duration-200">View HTML</button>
+                </div>
+            `;
+
+            const htmlInput = document.getElementById('html-input');
+            const fileUpload = document.getElementById('file-upload');
+            const viewHtmlBtn = document.getElementById('view-html-btn');
+
+            fileUpload.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        htmlInput.value = event.target.result;
+                    };
+                    reader.readAsText(file);
+                }
+            });
+
+            viewHtmlBtn.addEventListener('click', saveAndRedirect);
+        }
+
+        // Renders the HTML preview page
+        async function renderPreviewPage(htmlId) {
+            appContainer.classList.add('hidden');
+            htmlPreviewFrame.classList.remove('hidden');
+
+            try {
+                const docRef = doc(db, `artifacts/${appId}/public/data/html_previews`, htmlId);
+                const docSnap = await getDoc(docRef);
+
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    const htmlContent = data.content;
+
+                    // Set the iframe's content with the fetched HTML
+                    const doc = htmlPreviewFrame.contentWindow.document;
+                    doc.open();
+                    doc.write(htmlContent);
+                    doc.close();
+                } else {
+                    appContainer.classList.remove('hidden');
+                    htmlPreviewFrame.classList.add('hidden');
+                    dynamicContent.innerHTML = `<div class="p-6 text-center text-red-500 bg-red-100 rounded-lg">No HTML found for this ID. Please check the link.</div>`;
+                }
+            } catch (error) {
+                appContainer.classList.remove('hidden');
+                htmlPreviewFrame.classList.add('hidden');
+                console.error("Error fetching document:", error);
+                dynamicContent.innerHTML = `<div class="p-6 text-center text-red-500 bg-red-100 rounded-lg">An error occurred while fetching the HTML.</div>`;
+            }
+        }
+
+        // Saves HTML to Firestore and redirects
+        async function saveAndRedirect() {
+            const htmlInput = document.getElementById('html-input');
+            const content = htmlInput.value.trim();
+
+            if (!content) {
+                showStatusMessage("Please enter some HTML to save.", true);
+                return;
+            }
+
+            showStatusMessage("Saving HTML...", false);
+
+            try {
+                // Using setDoc with a unique ID to simulate a public resource
+                const newDocRef = doc(db, `artifacts/${appId}/public/data/html_previews`, crypto.randomUUID());
+                await setDoc(newDocRef, {
+                    content: content,
+                    createdAt: new Date(),
+                    createdBy: userId
+                });
+
+                // Redirect to the new URL with the document ID
+                window.location.href = `/?id=${newDocRef.id}`;
+            } catch (error) {
+                console.error("Error saving document:", error);
+                showStatusMessage(`Failed to save HTML: ${error.message}`, true);
+            }
+        }
+
+        // Start the application
+        initializeFirebase();
+    </script>
+</body>
+</html>
