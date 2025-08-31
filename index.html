@@ -196,7 +196,7 @@
                 });
 
                 // Redirect to the new URL with the document ID
-                window.location.href = `https://githubuser102234.github.io/HTMLpreviewer/?id=${newDocRef.id}`;
+                window.location.href = `https://githubuser102234.github.io/HTMLpreviewer/preview?id=${newDocRef.id}`;
             } catch (error) {
                 console.error("Error saving document:", error);
                 showStatusMessage(`Failed to save HTML: ${error.message}`, true);
