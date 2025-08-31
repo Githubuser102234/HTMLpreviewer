@@ -43,23 +43,29 @@
     <iframe id="html-preview-frame" class="hidden w-full h-screen border-none" sandbox="allow-scripts allow-forms allow-same-origin"></iframe>
 
     <script type="module">
-        // Global variables provided by the environment
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // Firebase configuration and initialization as requested
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-analytics.js";
 
-        // Firebase SDK imports
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // Firestore logs for debugging
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        setLogLevel('debug');
-
+        const firebaseConfig = {
+          apiKey: "AIzaSyCOY1Ca_6HxF0fO7t6s_G1agOabD9pBB1I",
+          authDomain: "htmlpreviewer-b24f3.firebaseapp.com",
+          projectId: "htmlpreviewer-b24f3",
+          storageBucket: "htmlpreviewer-b24f3.firebasestorage.app",
+          messagingSenderId: "845274858173",
+          appId: "1:845274858173:web:d92ac7694bfad81be72dd4",
+          measurementId: "G-CJK17Y30L7"
+        };
+      
+        const app = initializeApp(firebaseConfig);
+        getAnalytics(app);
 
         // Global Firebase instances
-        let app, db, auth;
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        
         let userId = null;
 
         // DOM elements
@@ -77,43 +83,26 @@
 
         // Initialize Firebase and handle authentication
         function initializeFirebase() {
-            try {
-                if (Object.keys(firebaseConfig).length > 0) {
-                    app = initializeApp(firebaseConfig);
-                    auth = getAuth(app);
-                    db = getFirestore(app);
+            // Listen for authentication state changes
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = user.uid;
+                    userInfoContainer.textContent = `User ID: ${userId}`;
+                    
+                    // Check the URL to determine which page to render
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const htmlId = urlParams.get('id');
 
-                    // Listen for authentication state changes
-                    onAuthStateChanged(auth, async (user) => {
-                        if (user) {
-                            userId = user.uid;
-                            userInfoContainer.textContent = `User ID: ${userId}`;
-                            
-                            // Check the URL to determine which page to render
-                            const urlParams = new URLSearchParams(window.location.search);
-                            const htmlId = urlParams.get('id');
-
-                            if (htmlId) {
-                                renderPreviewPage(htmlId);
-                            } else {
-                                renderEditorPage();
-                            }
-                        } else {
-                            // User is signed out or not authenticated, sign in anonymously
-                            if (initialAuthToken) {
-                                await signInWithCustomToken(auth, initialAuthToken);
-                            } else {
-                                await signInAnonymously(auth);
-                            }
-                        }
-                    });
+                    if (htmlId) {
+                        renderPreviewPage(htmlId);
+                    } else {
+                        renderEditorPage();
+                    }
                 } else {
-                    showStatusMessage("Firebase configuration is missing.", true);
+                    // User is signed out or not authenticated, sign in anonymously
+                    await signInAnonymously(auth);
                 }
-            } catch (error) {
-                console.error("Firebase initialization failed:", error);
-                showStatusMessage("Failed to initialize the application.", true);
-            }
+            });
         }
 
         // Renders the HTML editor page
@@ -159,7 +148,9 @@
             htmlPreviewFrame.classList.remove('hidden');
 
             try {
-                const docRef = doc(db, `artifacts/${appId}/public/data/html_previews`, htmlId);
+                // For GitHub Pages, we need to use the `projectId` from the firebaseConfig.
+                // The `appId` logic from the previous version is not needed here.
+                const docRef = doc(db, `html_previews`, htmlId);
                 const docSnap = await getDoc(docRef);
 
                 if (docSnap.exists()) {
@@ -197,8 +188,7 @@
             showStatusMessage("Saving HTML...", false);
 
             try {
-                // Using setDoc with a unique ID to simulate a public resource
-                const newDocRef = doc(db, `artifacts/${appId}/public/data/html_previews`, crypto.randomUUID());
+                const newDocRef = doc(db, `html_previews`, crypto.randomUUID());
                 await setDoc(newDocRef, {
                     content: content,
                     createdAt: new Date(),
