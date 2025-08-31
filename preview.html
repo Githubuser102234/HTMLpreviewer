@@ -3,21 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HTML Preview</title>
 </head>
 <body>
-    <div id="loading-message" style="display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; font-size: 1.2rem;">
-        Loading HTML...
-    </div>
-
-    <div id="error-message" style="display: none; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; font-size: 1.2rem; color: #dc2626;">
-        <!-- Error message will be displayed here -->
-    </div>
-
     <script type="module">
-        // Firebase configuration and initialization as requested
+        // Firebase configuration and initialization
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js";
         import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -34,51 +25,36 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        const loadingMessage = document.getElementById('loading-message');
-        const errorMessage = document.getElementById('error-message');
-
-        function showErrorMessage(message) {
-            loadingMessage.style.display = 'none';
-            errorMessage.textContent = message;
-            errorMessage.style.display = 'flex';
-        }
-
         async function loadAndRenderHtml() {
-            try {
-                // Get the ID from the URL
-                const urlParams = new URLSearchParams(window.location.search);
-                const htmlId = urlParams.get('id');
+            // Authenticate anonymously
+            await signInAnonymously(auth);
 
-                if (!htmlId) {
-                    showErrorMessage("No HTML ID found in the URL.");
-                    return;
-                }
+            // Get the ID from the URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const htmlId = urlParams.get('id');
+
+            if (!htmlId) {
+                document.body.innerHTML = "No HTML ID found in the URL. Please go back to the <a href='https://githubuser102234.github.io/HTMLpreviewer/'>editor</a> to create a new one.";
+                return;
+            }
+            
+            // Get the document from Firestore
+            const docRef = doc(db, `html_previews`, htmlId);
+            const docSnap = await getDoc(docRef);
+
+            if (docSnap.exists()) {
+                const htmlContent = docSnap.data().content;
                 
-                // Get the document from Firestore
-                const docRef = doc(db, `html_previews`, htmlId);
-                const docSnap = await getDoc(docRef);
-
-                if (docSnap.exists()) {
-                    const htmlContent = docSnap.data().content;
-                    
-                    // Directly replace the body content with the fetched HTML
-                    document.body.innerHTML = htmlContent;
-                } else {
-                    showErrorMessage("The requested HTML snippet does not exist.");
-                }
-            } catch (error) {
-                console.error("Error fetching document:", error);
-                showErrorMessage("An error occurred while loading the HTML.");
+                // Overwrite the entire document with the fetched HTML
+                document.open();
+                document.write(htmlContent);
+                document.close();
+            } else {
+                document.body.innerHTML = "The requested HTML snippet does not exist. Please go back to the <a href='https://githubuser102234.github.io/HTMLpreviewer/'>editor</a> to create a new one.";
             }
         }
 
-        // Authenticate anonymously and then load the content
-        onAuthStateChanged(auth, async (user) => {
-            if (!user) {
-                await signInAnonymously(auth);
-            }
-            loadAndRenderHtml();
-        });
+        loadAndRenderHtml();
     </script>
 </body>
 </html>
